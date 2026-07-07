@@ -30,7 +30,7 @@ RUN cd /alluxio-csi && \
 #   See - https://github.com/moby/moby/issues/35525
 FROM alpine:3.10.2 AS alluxio-extractor
 # Note that downloads for *-SNAPSHOT tarballs are not available.
-ARG ALLUXIO_TARBALL=http://downloads.alluxio.io/downloads/files/2.9.1-SNAPSHOT/alluxio-2.9.1-SNAPSHOT-bin.tar.gz
+ARG ALLUXIO_TARBALL=http://downloads.alluxio.io/downloads/files/2.9.0/alluxio-2.9.0-bin.tar.gz
 # (Alert):It's not recommended to set this Argument to true, unless you know exactly what you are doing
 ARG ENABLE_DYNAMIC_USER=false
 
@@ -46,7 +46,7 @@ RUN if [ ${ENABLE_DYNAMIC_USER} = "true" ] ; then \
     fi
 
 # Configure Java
-FROM centos:7 as build_java8
+FROM openeuler/openeuler:24.03-lts-sp1 as build_java8
 RUN \
     yum update -y && yum upgrade -y && \
     yum install -y java-1.8.0-openjdk-devel java-1.8.0-openjdk && \
@@ -55,7 +55,7 @@ ENV JAVA_HOME /usr/lib/jvm/java-1.8.0-openjdk
 # Disable JVM DNS cache in java8 (https://github.com/Alluxio/alluxio/pull/9452)
 RUN echo "networkaddress.cache.ttl=0" >> /usr/lib/jvm/java-1.8.0-openjdk/jre/lib/security/java.security
 
-FROM centos:7 as build_java11
+FROM openeuler/openeuler:24.03-lts-sp1 as build_java11
 RUN \
     yum update -y && yum upgrade -y && \
     yum install -y java-11-openjdk-devel java-11-openjdk && \
@@ -80,9 +80,22 @@ RUN \
     make -j8 && \
     make install && \
     cd .. && \
-    rm -rf libfuse && \
-    yum remove -y gcc gcc-c++ make cmake gettext-devel libtool autoconf wget git && \
-    yum install -y fuse3 fuse3-devel fuse3-lib && \
+    rm -rf libfuse
+# https://developer.aliyun.com/packageSearch?word=fuse3-libs-3.6.1-4.1.al7
+# 根据架构设置变量
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+# 根据架构选择不同的 RPM 包
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        wget -O /fuse3-libs.rpm https://mirrors.aliyun.com/alinux/2.1903/extras/x86_64/Packages/fuse3-libs-3.6.1-4.1.al7.x86_64.rpm; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        wget -O /fuse3-libs.rpm https://mirrors.aliyun.com/alinux/2.1903/extras/aarch64/Packages/fuse3-libs-3.6.1-4.1.al7.aarch64.rpm; \
+    fi
+RUN rpm -ivh --nodeps /fuse3-libs.rpm && \
+        rm -f /fuse3-libs.rpm
+RUN yum remove -y gcc gcc-c++ make cmake gettext-devel libtool autoconf wget git && \
+    yum install -y fuse3 fuse3-devel && \
     yum clean all
 
 # Configuration for the modified libfuse2
